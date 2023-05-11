@@ -7,7 +7,6 @@ CMakeFiles/TestRM.dir/keyValStore.c.o: ../keyValStore.h
 CMakeFiles/TestRM.dir/main.c.o: ../keyValStore.h
 CMakeFiles/TestRM.dir/main.c.o: ../main.c
 CMakeFiles/TestRM.dir/main.c.o: ../main.h
-CMakeFiles/TestRM.dir/main.c.o: ../sub.h
 
 CMakeFiles/TestRM.dir/sub.c.o: ../sub.c
 CMakeFiles/TestRM.dir/sub.c.o: ../sub.h
