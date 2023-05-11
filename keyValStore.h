@@ -1,21 +1,15 @@
-#ifndef KEYVALUE_H
-#define KEYVALUE_H
+#ifndef KEYVALSTORE_H
+#define KEYVALSTORE_H
 
+#define MAX_KEYS 100
+#define MAX_KEY_LEN 256
+#define MAX_VALUE_LEN 256
 
-
-// The struct that represents a key-value pair
-struct KeyValuePair {
-    char* key;
-    char* value;
-};
-
-// The function for adding or updating a key-value pair
 int put(char* key, char* value);
-
-// The function for retrieving a value associated with a given key
-int get(char* key, char** value);
-
-// The function for deleting a key-value pair
+int get(char* key, char* res);
 int del(char* key);
 
-#endif // KEYVALUE_H
+
+void initKeyValStore();
+
+#endif

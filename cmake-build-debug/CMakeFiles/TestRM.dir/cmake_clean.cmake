@@ -2,7 +2,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/TestRM.dir/main.c.o"
   "CMakeFiles/TestRM.dir/keyValStore.c.o"
   "CMakeFiles/TestRM.dir/sub.c.o"
-  "CMakeFiles/TestRM.dir/server.c.o"
   "TestRM.pdb"
   "TestRM"
 )

@@ -1,155 +1,130 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <pthread.h>
 #include "keyValStore.h"
 #include "main.h"
-#include <sys/socket.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <strings.h>
-#include <netinet/in.h>
-#include <string.h>
 
-#define MAX_TOKENS 3
-#define MAX_TOKEN_LENGTH 50
-#define VALUE_SIZE 64
+int num_threads = NUM_THREADS;
+pthread_t *threads;
+pthread_t main_thread;
 
-#define PORT 5678
-#define BUFFER_SIZE 1024
+void* handle_client(void* arg) {
+    int sockfd = *(int*) arg;
+    char buf[BUF_SIZE];
+    char key[BUF_SIZE];
+    char response[BUF_SIZE];
+    int nbytes;
 
-void error(const char *msg);
+    while ((nbytes = recv(sockfd, buf, BUF_SIZE, 0)) > 0) {
+        buf[nbytes] = '\0';
+        printf("Received message: %s\n", buf);
 
-int tokenize(char *buffer, char **tokens) {
-    int i = 0;
-    char *token = strtok(buffer, " ");
-    while (token != NULL && i < MAX_TOKENS) {
-        tokens[i++] = token;
-        token = strtok(NULL, " ");
-    }
 
-    if (i == MAX_TOKENS && strtok(NULL, " ") != NULL) {
-        return -1;
-    }
-
-    for (int j = 0; j < i; j++) {
-        if (strlen(tokens[j]) > MAX_TOKEN_LENGTH) {
-            return -1;
-        }
-    }
-
-    return i;
-}
-
-void handle_connection(int sockfd) {
-    char buffer[BUFFER_SIZE];
-    int n;
-
-    // Keep reading commands from the client until the client quits
-    while (1) {
-        // Read a command from the client
-        bzero(buffer, BUFFER_SIZE);
-        n = read(sockfd, buffer, BUFFER_SIZE);
-        if (n < 0) {
-            error("Error reading from socket");
-            return;
-        }
-
-        // Tokenize the command string
-        char *tokens[3];
-        tokenize(buffer, tokens);
-
-        // Process the command
-        if (strcmp(tokens[0], "GET") == 0) {
-            char value[VALUE_SIZE];
-            int result = get(tokens[1], value);
-            if (result < 0) {
-                write(sockfd, "GET:key:key_nonexistent", strlen("GET:key:key_nonexistent"));
+        // Parse the request
+        char value[BUF_SIZE];
+        if (sscanf(buf, "PUT %s %s", key, value) == 2) {
+            if (put(key, value) == 0) {
+                snprintf(response, BUF_SIZE, "PUT:%s:%s\n", key, value);
             } else {
-                char response[BUFFER_SIZE];
-                snprintf(response, BUFFER_SIZE, "GET:%s:%s", tokens[1], value);
-                write(sockfd, response, strlen(response));
+                snprintf(response, BUF_SIZE, "PUT ERROR\n");
             }
-        } else if (strcmp(tokens[0], "PUT") == 0) {
-            int result = put(tokens[1], tokens[2]);
-            if (result < 0) {
-                error("Error putting key-value pair");
+        } else if (sscanf(buf, "GET %s", key) == 1) {
+            if (get(key, value) == 0) {
+                snprintf(response, BUF_SIZE, "GET:%s:%s\n", key, value);
             } else {
-                char response[BUFFER_SIZE];
-                snprintf(response, BUFFER_SIZE, "PUT:%s:%s", tokens[1], tokens[2]);
-                write(sockfd, response, strlen(response));
+                snprintf(response, BUF_SIZE, "GET ERROR\n");
             }
-        } else if (strcmp(tokens[0], "DEL") == 0) {
-            int result = del(tokens[1]);
-            if (result < 0) {
-                write(sockfd, "DEL:key:key_nonexistent", strlen("DEL:key:key_nonexistent"));
+        } else if (sscanf(buf, "DEL %s", key) == 1) {
+            if (del(key) == 0) {
+                snprintf(response, BUF_SIZE, "DEL:%s\n", key);
             } else {
-                char response[BUFFER_SIZE];
-                snprintf(response, BUFFER_SIZE, "DEL:%s:key_deleted", tokens[1]);
-                write(sockfd, response, strlen(response));
+                snprintf(response, BUF_SIZE, "DEL ERROR\n");
             }
-        } else if (strcmp(tokens[0], "QUIT") == 0) {
-            // Close the socket and return
+        } else if (sscanf(buf, "QUIT") == 0) {
+            printf("Received QUIT command, terminating server\n");
+            // Cancel all threads
+            pthread_cancel(main_thread);
+            for (int i = 0; i < num_threads; i++) {
+                pthread_cancel(threads[i]);
+            }
+            // Close the server socket and exit the process
             close(sockfd);
-            return;
-        } else {
-            // Invalid command
-            error("Invalid command");
+            exit(0);
         }
+        else {
+            snprintf(response, BUF_SIZE, "INVALID COMMAND\n");
+        }
+
+        // Send the response
+        send(sockfd, response, strlen(response), 0);
+        printf("Sent message: %s\n", response);
     }
+
+    close(sockfd);
+    free(arg);
+    return NULL;
 }
 
+int main(int argc, char* argv[]) {
+    int sockfd, connfd;
+    struct sockaddr_in servaddr, clientaddr;
 
+    // Initialize the key-value store
+    initKeyValStore();
 
-int main() {
-
-    int server_fd, client_fd;
-    struct sockaddr_in server_addr, client_addr;
-    int opt = 1;
-    int addrlen = sizeof(server_addr);
-    char buffer[BUFFER_SIZE] = {0};
-
-    // Create socket file descriptor
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("socket failed");
+    // Create the socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        perror("socket creation failed");
         exit(EXIT_FAILURE);
     }
 
-// Set socket options
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
-        perror("setsockopt failed");
+    // Set up the server address
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(PORT);
+
+    // Bind the socket to the server address
+    if (bind(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr)) != 0) {
+        perror("socket bind failed");
         exit(EXIT_FAILURE);
     }
 
-// Set server address and bind socket
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(PORT);
-    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("bind failed");
-        exit(EXIT_FAILURE);
-    }
-
-// Listen for incoming connections
-    if (listen(server_fd, 3) < 0) {
+    // Start listening for connections
+    if (listen(sockfd, 5) != 0){
         perror("listen failed");
         exit(EXIT_FAILURE);
     }
+    printf("Key-value store server listening on port %d...\n", PORT);
 
     while (1) {
-        // Accept incoming connection
-        if ((client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t*)&addrlen)) < 0) {
+        // Accept a new connection
+        socklen_t clientaddr_len = sizeof(clientaddr);
+        connfd = accept(sockfd, (struct sockaddr *) &clientaddr, &clientaddr_len);
+        if (connfd == -1) {
             perror("accept failed");
             exit(EXIT_FAILURE);
         }
 
-        // Handle connection
-        handle_connection(client_fd);
+        // Create a new thread to handle the connection
+        int* arg = malloc(sizeof(*arg));
+        if (arg == NULL) {
+            perror("malloc failed");
+            exit(EXIT_FAILURE);
+        }
+        *arg = connfd;
 
-        // Close client connection
-        close(client_fd);
+        pthread_t tid;
+        if (pthread_create(&tid, NULL, handle_client, arg) != 0) {
+            perror("pthread_create failed");
+            exit(EXIT_FAILURE);
+        }
     }
 
-
-
-
+    return 0;
 }
-
-
