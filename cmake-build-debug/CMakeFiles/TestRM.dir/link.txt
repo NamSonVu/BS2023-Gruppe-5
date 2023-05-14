@@ -1,1 +1,1 @@
-/usr/bin/cc -g   CMakeFiles/TestRM.dir/main.c.o CMakeFiles/TestRM.dir/keyValStore.c.o CMakeFiles/TestRM.dir/sub.c.o CMakeFiles/TestRM.dir/server.c.o  -o TestRM 
+/usr/bin/cc -g   CMakeFiles/TestRM.dir/main.c.o CMakeFiles/TestRM.dir/keyValStore.c.o CMakeFiles/TestRM.dir/sub.c.o  -o TestRM -lpthread 

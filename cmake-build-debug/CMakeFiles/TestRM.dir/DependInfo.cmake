@@ -6,7 +6,6 @@ set(CMAKE_DEPENDS_LANGUAGES
 set(CMAKE_DEPENDS_CHECK_C
   "/tmp/PrakBS21/keyValStore.c" "/tmp/PrakBS21/cmake-build-debug/CMakeFiles/TestRM.dir/keyValStore.c.o"
   "/tmp/PrakBS21/main.c" "/tmp/PrakBS21/cmake-build-debug/CMakeFiles/TestRM.dir/main.c.o"
-  "/tmp/PrakBS21/server.c" "/tmp/PrakBS21/cmake-build-debug/CMakeFiles/TestRM.dir/server.c.o"
   "/tmp/PrakBS21/sub.c" "/tmp/PrakBS21/cmake-build-debug/CMakeFiles/TestRM.dir/sub.c.o"
   )
 set(CMAKE_C_COMPILER_ID "GNU")
