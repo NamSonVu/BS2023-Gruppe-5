@@ -26,18 +26,31 @@ void* handle_client(void* arg) {
         // Parse the request
         char value[BUF_SIZE];
         int command = -1; // Initialize to invalid value
-        sscanf(buf, "%s", key);
-        if (strcasecmp(key, "PUT") == 0) {
-            sscanf(buf, "%*s %s %s", key, value);
-            command = 0;
-        } else if (strcasecmp(key, "GET") == 0) {
-            sscanf(buf, "%*s %s", key);
-            command = 1;
-        } else if (strcasecmp(key, "DEL") == 0) {
-            sscanf(buf, "%*s %s", key);
-            command = 2;
-        } else if (strcasecmp(key, "QUIT") == 0) {
-            command = 3;
+
+        // Check if the command starts with "PUT"
+        if (strncasecmp(buf, "PUT", 3) == 0) {
+            // Try to parse the command
+            if (sscanf(buf, "PUT %s %s", key, value) == 2) {
+                command = 0; // PUT command
+            }
+        }
+            // Check if the command starts with "GET"
+        else if (strncasecmp(buf, "GET", 3) == 0) {
+            // Try to parse the command
+            if (sscanf(buf, "GET %s", key) == 1) {
+                command = 1; // GET command
+            }
+        }
+            // Check if the command starts with "DEL"
+        else if (strncasecmp(buf, "DEL", 3) == 0) {
+            // Try to parse the command
+            if (sscanf(buf, "DEL %s", key) == 1) {
+                command = 2; // DEL command
+            }
+        }
+            // Check if the command is "QUIT"
+        else if (strcasecmp(buf, "QUIT") == 0) {
+            command = 3; // QUIT command
         }
 
         // Handle the command
@@ -92,6 +105,7 @@ void* handle_client(void* arg) {
     free(arg);
     return NULL;
 }
+
 
 
 int main(int argc, char* argv[]) {
