@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" serverName="Remote Development" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
       <paths name="DockerVM">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/tmp/PrakBS21" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
       <paths name="DockerVM Ubuntu 18.04 (c2f1b04c-f141-4427-bfc1-9908cf3778b0)">
         <serverdata>
           <mappings>
-            <mapping deploy="/tmp/BVS23_14.05" local="$PROJECT_DIR$" />
+            <mapping deploy="/tmp/PrakBS21" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
