@@ -14,6 +14,9 @@
           <mappings>
             <mapping deploy="/tmp/PrakBS21" local="$PROJECT_DIR$" web="/" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-dockervm-ubuntu-1804" />
+          </excludedPaths>
         </serverdata>
       </paths>
     </serverData>
