@@ -1,11 +1,6 @@
 #include <string.h>
 #include "keyValStore.h"
 
-typedef struct {
-    char key[MAX_KEY_LEN];
-    char value[MAX_VALUE_LEN];
-    int used;
-} KeyValue;
 
 static KeyValue keyvalstore[MAX_KEYS];
 
@@ -29,6 +24,8 @@ int put(char* key, char* value) {
             return 0;
         }
     }
+
+
 
     return -1;
 }

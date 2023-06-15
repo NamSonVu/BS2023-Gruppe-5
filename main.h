@@ -4,4 +4,4 @@
 #define NUM_THREADS 100
 
 void* handle_client(void* arg);
-int main(int argc, char* argv[]);
+int main();

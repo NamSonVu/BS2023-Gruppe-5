@@ -7,10 +7,14 @@
 #include <pthread.h>
 #include "keyValStore.h"
 #include "main.h"
-#include "sub.c"
+
 int num_threads = NUM_THREADS;
 pthread_t *threads;
 pthread_t main_thread;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+int transaction_in_progress = 0;
+int active_client = -1;
 
 void* handle_client(void* arg) {
     int sockfd = *(int*) arg;
@@ -27,35 +31,76 @@ void* handle_client(void* arg) {
         char value[BUF_SIZE];
         int command = -1; // Initialize to invalid value
 
-        // Check if the command starts with "PUT"
-        if (strncasecmp(buf, "PUT", 3) == 0) {
+        // Check if the command is "BEG"
+        if (strncasecmp(buf, "BEG", 3) == 0) {
+            command = 0; // BEG command
+        }
+            // Check if the command is "END"
+        else if (strncasecmp(buf, "END", 3) == 0) {
+            command = 1; // END command
+        }
+            // Check if the command starts with "PUT"
+        else if (strncasecmp(buf, "PUT", 3) == 0) {
             // Try to parse the command
             if (sscanf(buf, "PUT %s %s", key, value) == 2) {
-                command = 0; // PUT command
+                command = 2; // PUT command
             }
         }
             // Check if the command starts with "GET"
         else if (strncasecmp(buf, "GET", 3) == 0) {
             // Try to parse the command
             if (sscanf(buf, "GET %s", key) == 1) {
-                command = 1; // GET command
+                command = 3; // GET command
             }
         }
             // Check if the command starts with "DEL"
         else if (strncasecmp(buf, "DEL", 3) == 0) {
             // Try to parse the command
             if (sscanf(buf, "DEL %s", key) == 1) {
-                command = 2; // DEL command
+                command = 4; // DEL command
             }
         }
             // Check if the command is "QUIT"
         else if (strcasecmp(buf, "QUIT") == 0) {
-            command = 3; // QUIT command
+            command = 5; // QUIT command
         }
 
         // Handle the command
         switch (command) {
-            case 0: // PUT
+            case 0: // BEG
+                pthread_mutex_lock(&mutex);
+                if (transaction_in_progress) {
+                    snprintf(response, BUF_SIZE, "ERROR: Transaction already in progress by another client\n");
+                } else {
+                    transaction_in_progress = 1;
+                    active_client = sockfd;
+                    snprintf(response, BUF_SIZE, "Started transaction\n");
+                }
+                pthread_mutex_unlock(&mutex);
+                break;
+
+            case 1: // END
+                pthread_mutex_lock(&mutex);
+                if (!transaction_in_progress) {
+                    snprintf(response, BUF_SIZE, "ERROR: No transaction in progress\n");
+                } else if (active_client != sockfd) {
+                    snprintf(response, BUF_SIZE, "ERROR: Not the active client in the transaction\n");
+                } else {
+                    transaction_in_progress = 0;
+                    active_client = -1;
+                    snprintf(response, BUF_SIZE, "Ended transaction\n");
+                    pthread_cond_broadcast(&cond);
+                }
+                pthread_mutex_unlock(&mutex);
+                break;
+
+            case 2: // PUT
+                pthread_mutex_lock(&mutex);
+                while (transaction_in_progress && active_client != sockfd) {
+                    pthread_cond_wait(&cond, &mutex);
+                }
+                pthread_mutex_unlock(&mutex);
+
                 if (put(key, value) == 0) {
                     snprintf(response, BUF_SIZE, "PUT:%s:%s\n", key, value);
                 } else {
@@ -63,7 +108,13 @@ void* handle_client(void* arg) {
                 }
                 break;
 
-            case 1: // GET
+            case 3: // GET
+                pthread_mutex_lock(&mutex);
+                while (transaction_in_progress && active_client != sockfd) {
+                    pthread_cond_wait(&cond, &mutex);
+                }
+                pthread_mutex_unlock(&mutex);
+
                 if (get(key, value) == 0) {
                     snprintf(response, BUF_SIZE, "GET:%s:%s\n", key, value);
                 } else {
@@ -71,7 +122,13 @@ void* handle_client(void* arg) {
                 }
                 break;
 
-            case 2: // DEL
+            case 4: // DEL
+                pthread_mutex_lock(&mutex);
+                while (transaction_in_progress && active_client != sockfd) {
+                    pthread_cond_wait(&cond, &mutex);
+                }
+                pthread_mutex_unlock(&mutex);
+
                 if (del(key) == 0) {
                     snprintf(response, BUF_SIZE, "DEL:%s\n", key);
                 } else {
@@ -79,17 +136,18 @@ void* handle_client(void* arg) {
                 }
                 break;
 
-            case 3: // QUIT
-                printf("Received QUIT command, terminating server\n");
-                // Cancel all threads
-                pthread_cancel(main_thread);
-                for (int i = 0; i < num_threads; i++) {
-                    pthread_cancel(threads[i]);
+            case 5: // QUIT
+                printf("Received QUIT command, terminating client connection\n");
+                pthread_mutex_lock(&mutex);
+                if (transaction_in_progress && active_client == sockfd) {
+                    transaction_in_progress = 0;
+                    active_client = -1;
+                    pthread_cond_broadcast(&cond);
                 }
-                // Close the server socket and exit the process
+                pthread_mutex_unlock(&mutex);
                 close(sockfd);
-                exit(0);
-                break;
+                free(arg);
+                return NULL;
 
             default:
                 snprintf(response, BUF_SIZE, "INVALID COMMAND\n");
@@ -100,6 +158,14 @@ void* handle_client(void* arg) {
         send(sockfd, response, strlen(response), 0);
         printf("Sent message: %s\n", response);
     }
+
+    pthread_mutex_lock(&mutex);
+    if (transaction_in_progress && active_client == sockfd) {
+        transaction_in_progress = 0;
+        active_client = -1;
+        pthread_cond_broadcast(&cond);
+    }
+    pthread_mutex_unlock(&mutex);
 
     close(sockfd);
     free(arg);
@@ -141,9 +207,6 @@ int main(int argc, char* argv[]) {
     }
     printf("Key-value store server listening on port %d...\n", PORT);
 
-
-
-
     while (1) {
         // Accept a new connection
         socklen_t clientaddr_len = sizeof(clientaddr);
@@ -159,12 +222,15 @@ int main(int argc, char* argv[]) {
                                             "This server allows you to store and retrieve key-value pairs using the following functions:\n\n"
                                             "| Function | Description                        | Usage         |\n"
                                             "|----------|------------------------------------|---------------|\n"
+                                            "| BEG      | Starts a transaction               | BEG           |\n"
+                                            "| END      | Ends a transaction                 | END           |\n"
                                             "| PUT      | Stores a key-value pair in database| PUT key val   |\n"
                                             "| GET      | Retrieves value for a given key    | GET key res   |\n"
                                             "| DEL      | Removes a key-value pair from db   | DEL key       |\n\n"
                                             "To use these functions in your code, simply call them with the appropriate arguments as shown.\n"
                                             "Thank you for using our Key-Value Server!\n");
         send(connfd, welcome_message, strlen(welcome_message), 0);
+
         // Create a new thread to handle the connection
         int* arg = malloc(sizeof(*arg));
         if (arg == NULL) {
