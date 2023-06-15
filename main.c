@@ -11,10 +11,13 @@
 int num_threads = NUM_THREADS;
 pthread_t *threads;
 pthread_t main_thread;
+
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 int transaction_in_progress = 0;
 int active_client = -1;
+Subscription subscriptions[MAX_SUBSCRIPTIONS];
+int num_subscriptions = 0;
 
 void* handle_client(void* arg) {
     int sockfd = *(int*) arg;
@@ -60,9 +63,16 @@ void* handle_client(void* arg) {
                 command = 4; // DEL command
             }
         }
+            // Check if the command starts with "SUB"
+        else if (strncasecmp(buf, "SUB", 3) == 0) {
+            // Try to parse the command
+            if (sscanf(buf, "SUB %s", key) == 1) {
+                command = 5; // SUB command
+            }
+        }
             // Check if the command is "QUIT"
         else if (strcasecmp(buf, "QUIT") == 0) {
-            command = 5; // QUIT command
+            command = 6; // QUIT command
         }
 
         // Handle the command
@@ -103,10 +113,17 @@ void* handle_client(void* arg) {
 
                 if (put(key, value) == 0) {
                     snprintf(response, BUF_SIZE, "PUT:%s:%s\n", key, value);
+                    // Publish to subscribers
+                    for (int i = 0; i < num_subscriptions; i++) {
+                        if (strcmp(subscriptions[i].key, key) == 0) {
+                            send(subscriptions[i].sockfd, response, strlen(response), 0);
+                        }
+                    }
                 } else {
                     snprintf(response, BUF_SIZE, "PUT ERROR\n");
                 }
                 break;
+
 
             case 3: // GET
                 pthread_mutex_lock(&mutex);
@@ -136,7 +153,19 @@ void* handle_client(void* arg) {
                 }
                 break;
 
-            case 5: // QUIT
+            case 5: // SUB
+                pthread_mutex_lock(&mutex);
+                int result = subscribe(key, sockfd);
+                pthread_mutex_unlock(&mutex);
+
+                if (result == 0) {
+                    snprintf(response, BUF_SIZE, "SUB:%s\n", key);
+                } else {
+                    snprintf(response, BUF_SIZE, "ERROR: Maximum number of subscriptions reached\n");
+                }
+                break;
+
+            case 6: // QUIT
                 printf("Received QUIT command, terminating client connection\n");
                 pthread_mutex_lock(&mutex);
                 if (transaction_in_progress && active_client == sockfd) {
@@ -167,12 +196,20 @@ void* handle_client(void* arg) {
     }
     pthread_mutex_unlock(&mutex);
 
+    // Remove subscriptions for the client
+    pthread_mutex_lock(&mutex);
+    for (int i = 0; i < num_subscriptions; i++) {
+        if (subscriptions[i].sockfd == sockfd) {
+            subscriptions[i] = subscriptions[--num_subscriptions];
+            i--;
+        }
+    }
+    pthread_mutex_unlock(&mutex);
+
     close(sockfd);
     free(arg);
     return NULL;
 }
-
-
 
 int main(int argc, char* argv[]) {
     int sockfd, connfd;
@@ -226,7 +263,8 @@ int main(int argc, char* argv[]) {
                                             "| END      | Ends a transaction                 | END           |\n"
                                             "| PUT      | Stores a key-value pair in database| PUT key val   |\n"
                                             "| GET      | Retrieves value for a given key    | GET key res   |\n"
-                                            "| DEL      | Removes a key-value pair from db   | DEL key       |\n\n"
+                                            "| DEL      | Removes a key-value pair from db   | DEL key       |\n"
+                                            "| SUB      | Subscribes to updates for a key     | SUB key       |\n\n"
                                             "To use these functions in your code, simply call them with the appropriate arguments as shown.\n"
                                             "Thank you for using our Key-Value Server!\n");
         send(connfd, welcome_message, strlen(welcome_message), 0);

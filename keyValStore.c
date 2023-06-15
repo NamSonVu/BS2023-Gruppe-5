@@ -1,19 +1,44 @@
+#include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <sys/socket.h>
 #include "keyValStore.h"
 
-
 static KeyValue keyvalstore[MAX_KEYS];
+static Subscription subscriptions[MAX_KEYS];
+static int num_subscriptions = 0;
 
 void initKeyValStore() {
     memset(keyvalstore, 0, sizeof(KeyValue) * MAX_KEYS);
+    memset(subscriptions, 0, sizeof(Subscription) * MAX_KEYS);
+    num_subscriptions = 0;
+}
+
+void notifySubscribers(const char* key, const char* value, const char* action) {
+    char notification[BUF_SIZE];
+    snprintf(notification, BUF_SIZE, "%s:%s:%s\n", action, key, value);
+
+    for (int j = 0; j < num_subscriptions; j++) {
+        if (strcmp(subscriptions[j].key, key) == 0) {
+            send(subscriptions[j].sockfd, notification, strlen(notification), 0);
+        }
+    }
 }
 
 int put(char* key, char* value) {
+    int modified = 0;
+
     for (int i = 0; i < MAX_KEYS; i++) {
         if (keyvalstore[i].used && strcmp(keyvalstore[i].key, key) == 0) {
             strcpy(keyvalstore[i].value, value);
-            return 0;
+            modified = 1;
+            break;
         }
+    }
+
+    if (modified) {
+        notifySubscribers(key, value, "KEY_MODIFIED");
+        return 0;
     }
 
     for (int i = 0; i < MAX_KEYS; i++) {
@@ -21,11 +46,10 @@ int put(char* key, char* value) {
             strcpy(keyvalstore[i].key, key);
             strcpy(keyvalstore[i].value, value);
             keyvalstore[i].used = 1;
+            notifySubscribers(key, value, "KEY_ADDED");
             return 0;
         }
     }
-
-
 
     return -1;
 }
@@ -42,12 +66,32 @@ int get(char* key, char* res) {
 }
 
 int del(char* key) {
+    int deleted = 0;
+
     for (int i = 0; i < MAX_KEYS; i++) {
         if (keyvalstore[i].used && strcmp(keyvalstore[i].key, key) == 0) {
             keyvalstore[i].used = 0;
-            return 0;
+            deleted = 1;
+            break;
         }
     }
 
+    if (deleted) {
+        notifySubscribers(key, "", "KEY_DELETED");
+        return 0;
+    }
+
     return -1;
+}
+
+int subscribe(char* key, int sockfd) {
+    if (num_subscriptions >= MAX_KEYS) {
+        return -1;  // Maximum number of subscriptions reached
+    }
+
+    strcpy(subscriptions[num_subscriptions].key, key);
+    subscriptions[num_subscriptions].sockfd = sockfd;
+    num_subscriptions++;
+
+    return 0;
 }
