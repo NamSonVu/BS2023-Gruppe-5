@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 #include <sys/socket.h>
+#include <pthread.h>
 #include "keyValStore.h"
+
+pthread_mutex_t subscriptions_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static KeyValue keyvalstore[MAX_KEYS];
 static Subscription subscriptions[MAX_KEYS];
@@ -85,7 +87,10 @@ int del(char* key) {
 }
 
 int subscribe(char* key, int sockfd) {
+    pthread_mutex_lock(&subscriptions_mutex);  // Lock the mutex to ensure exclusive access to the subscriptions array
+
     if (num_subscriptions >= MAX_KEYS) {
+        pthread_mutex_unlock(&subscriptions_mutex);  // Unlock the mutex before returning
         return -1;  // Maximum number of subscriptions reached
     }
 
@@ -93,5 +98,8 @@ int subscribe(char* key, int sockfd) {
     subscriptions[num_subscriptions].sockfd = sockfd;
     num_subscriptions++;
 
+    pthread_mutex_unlock(&subscriptions_mutex);  // Unlock the mutex
+
     return 0;
 }
+

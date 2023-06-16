@@ -8,10 +8,6 @@
 #include "keyValStore.h"
 #include "main.h"
 
-int num_threads = NUM_THREADS;
-pthread_t *threads;
-pthread_t main_thread;
-
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 int transaction_in_progress = 0;
@@ -71,7 +67,7 @@ void* handle_client(void* arg) {
             }
         }
             // Check if the command is "QUIT"
-        else if (strcasecmp(buf, "QUIT") == 0) {
+        else if (strncasecmp(buf, "QUIT", 4) == 0) {
             command = 6; // QUIT command
         }
 
@@ -264,7 +260,7 @@ int main(int argc, char* argv[]) {
                                             "| PUT      | Stores a key-value pair in database| PUT key val   |\n"
                                             "| GET      | Retrieves value for a given key    | GET key res   |\n"
                                             "| DEL      | Removes a key-value pair from db   | DEL key       |\n"
-                                            "| SUB      | Subscribes to updates for a key     | SUB key       |\n\n"
+                                            "| SUB      | Subscribes to updates for a key    | SUB key       |\n\n"
                                             "To use these functions in your code, simply call them with the appropriate arguments as shown.\n"
                                             "Thank you for using our Key-Value Server!\n");
         send(connfd, welcome_message, strlen(welcome_message), 0);
